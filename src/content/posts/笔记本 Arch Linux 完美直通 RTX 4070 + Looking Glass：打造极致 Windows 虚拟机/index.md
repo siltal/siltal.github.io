@@ -2,7 +2,7 @@
 title: 笔记本 Arch Linux 完美直通 RTX 4070 + Looking Glass：打造极致 Windows 虚拟机
 published: 2025-12-28
 description: ''
-image: ''
+image: 'tskmgr.png'
 tags: ['QEMU','KVM','libvirt']
 category: 'Linux'
 draft: false 
@@ -10,7 +10,7 @@ lang: ''
 ---
 
 
-## 前言
+> 前言
 
 作为一名 Arch Linux 用户（KDE Plasma + Wayland），虽然 Linux 已经能满足绝大多数开发和日常需求，但偶尔的游戏娱乐或特定的 Windows 软件依然必不可少。双系统切换繁琐，且打断工作流。
 
@@ -85,17 +85,20 @@ reboot
 
 本部分使用libvirt-xml配置虚拟机
 
-```xml
+```xml "virtio-win.iso" "win10.qcow2" "Win10_22H2_Chinese_Simplified_x64v1.iso"
 
 <domain xmlns:qemu="http://libvirt.org/schemas/domain/qemu/1.0" type="kvm">
   <name>win10-gpu</name>
   <uuid>bc2d4448-2855-4cef-b569-99abbd8fadf6</uuid>
   <memory unit="KiB">25165824</memory>
   <currentMemory unit="KiB">25165824</currentMemory>
+  <memoryBacking>
+    <source type="memfd"/>
+    <access mode="shared"/>
+  </memoryBacking>
   <vcpu placement="static">16</vcpu>
   <iothreads>1</iothreads>
   <cputune>
-  <!-- 根据CPU性能核与能效核分配绑定 -->
     <vcpupin vcpu="0" cpuset="0"/>
     <vcpupin vcpu="1" cpuset="1"/>
     <vcpupin vcpu="2" cpuset="2"/>
@@ -115,15 +118,15 @@ reboot
     <emulatorpin cpuset="16-31"/>
     <iothreadpin iothread="1" cpuset="16-31"/>
   </cputune>
+  <!-- 启动镜像 -->
   <os firmware="efi">
     <type arch="x86_64" machine="pc-q35-7.2">hvm</type>
     <firmware>
       <feature enabled="no" name="enrolled-keys"/>
       <feature enabled="no" name="secure-boot"/>
     </firmware>
-    <!-- UEFI启动固件 -->
     <loader readonly="yes" type="pflash" format="raw">/usr/share/edk2/x64/OVMF_CODE.4m.fd</loader>
-    <nvram template="/usr/share/edk2/x64/OVMF_VARS.4m.fd" templateFormat="raw" format="raw">/var/lib/libvirt/qemu/nvram/win10_VARS.fd</nvram>
+    <nvram template="/usr/share/edk2/x64/OVMF_VARS.4m.fd" templateFormat="raw" format="raw">/var/lib/libvirt/qemu/nvram/win10-gpu_VARS.fd</nvram>
   </os>
   <features>
     <acpi/>
@@ -157,26 +160,26 @@ reboot
   <on_crash>destroy</on_crash>
   <devices>
     <emulator>/usr/bin/qemu-system-x86_64</emulator>
+    <!-- 磁盘 -->
     <disk type="file" device="disk">
       <driver name="qemu" type="qcow2" cache="none" io="native" discard="unmap"/>
-      <!-- 磁盘映射 -->
       <source file="/var/lib/libvirt/images/win10.qcow2"/>
       <target dev="vda" bus="virtio"/>
       <boot order="1"/>
       <address type="pci" domain="0x0000" bus="0x03" slot="0x00" function="0x0"/>
     </disk>
+    <!-- 安装盘 -->
     <disk type="file" device="cdrom">
       <driver name="qemu" type="raw"/>
-      <!-- 安装盘 -->
       <source file="/var/lib/libvirt/images/Win10_22H2_Chinese_Simplified_x64v1.iso"/>
       <target dev="sdb" bus="sata"/>
       <readonly/>
       <boot order="2"/>
       <address type="drive" controller="0" bus="0" target="0" unit="1"/>
     </disk>
+    <!-- 体验增强工具 -->
     <disk type="file" device="cdrom">
       <driver name="qemu" type="raw"/>
-      <!-- 优化工具 -->
       <source file="/var/lib/libvirt/images/virtio-win.iso"/>
       <target dev="sdc" bus="sata"/>
       <readonly/>
@@ -233,27 +236,44 @@ reboot
       <model name="pcie-pci-bridge"/>
       <address type="pci" domain="0x0000" bus="0x07" slot="0x00" function="0x0"/>
     </controller>
+    <!-- spice通道 用于剪切板同步 -->
+    <controller type="pci" index="10" model="pcie-root-port">
+      <model name="pcie-root-port"/>
+      <target chassis="10" port="0x18"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x03" function="0x0"/>
+    </controller>
+    <controller type="virtio-serial" index="0">
+      <address type="pci" domain="0x0000" bus="0x08" slot="0x00" function="0x0"/>
+    </controller>
     <interface type="network">
       <mac address="52:54:00:e9:22:99"/>
       <source network="default"/>
       <model type="virtio"/>
       <address type="pci" domain="0x0000" bus="0x01" slot="0x00" function="0x0"/>
     </interface>
+    <channel type="spicevmc">
+      <target type="virtio" name="com.redhat.spice.0"/>
+      <address type="virtio-serial" controller="0" bus="0" port="1"/>
+    </channel>
     <input type="mouse" bus="ps2"/>
     <input type="keyboard" bus="ps2"/>
     <graphics type="spice" autoport="yes">
       <listen type="address"/>
     </graphics>
+    <!-- 声卡 -->
+    <sound model="ich9">
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x1b" function="0x0"/>
+    </sound>
     <audio id="1" type="spice"/>
     <video>
       <model type="qxl" ram="65536" vram="65536" vgamem="16384" heads="1" primary="yes"/>
       <address type="pci" domain="0x0000" bus="0x00" slot="0x01" function="0x0"/>
     </video>
+    <!-- vbios -->
     <hostdev mode="subsystem" type="pci" managed="yes">
       <source>
         <address domain="0x0000" bus="0x01" slot="0x00" function="0x0"/>
       </source>
-      <!-- 从https://www.techpowerup.com/vgabios/ 下载对应显卡驱动，并删除字节直到55aa -->
       <rom file="/var/lib/libvirt/vbios/patched_4070.rom"/>
       <address type="pci" domain="0x0000" bus="0x05" slot="0x00" function="0x0"/>
     </hostdev>
@@ -274,12 +294,23 @@ reboot
     <memballoon model="virtio">
       <address type="pci" domain="0x0000" bus="0x04" slot="0x00" function="0x0"/>
     </memballoon>
+    <!-- 共享内存 -->
+    <shmem name="looking-glass">
+      <model type="ivshmem-plain"/>
+      <size unit="M">64</size>
+      <address type="pci" domain="0x0000" bus="0x09" slot="0x01" function="0x0"/>
+    </shmem>
   </devices>
+  <!-- 虚拟电池 -->
+  <qemu:commandline>
+    <qemu:arg value="-acpitable"/>
+    <qemu:arg value="file=/var/lib/libvirt/images/ssdt1.aml"/>
+  </qemu:commandline>
 </domain>
 
 ```
 
-3.1 CPU 核心绑定与拓扑 (`<cputune>` & `<cpu>`)
+### 3.1 CPU 核心绑定与拓扑 (`<cputune>` & `<cpu>`)
 这是确保虚拟机性能、减少掉帧的关键配置。
 
 `<vcpupin>` (来源)：在 Linux 终端运行 lscpu -e 或 lstopo 查看 CPU 拓扑。
@@ -290,7 +321,7 @@ i9-13900HX 提示：该 CPU 拥有性能核（P-Core）和能效核（E-Core）�
 
 `<topology>`：这里的 cores="8" threads="2" 对应了你分配的 16 个 vCPU。
 
-3.2 固件与 UEFI 启动 (`<os>`)
+### 3.2 固件与 UEFI 启动 (`<os>`)
 显卡直通必须使用 UEFI 模式，不能使用传统的 BIOS。
 
 `<loader>` & `<nvram>` (来源)：这些文件由 edk2-ovmf 包提供。
@@ -299,21 +330,21 @@ i9-13900HX 提示：该 CPU 拥有性能核（P-Core）和能效核（E-Core）�
 
 .4m 后缀：这是较新的 OVMF 格式，确保 CODE（固件本身）和 VARS（保存的 UEFI 设置）版本匹配。
 
-3.3 硬件欺骗与 Hyper-V 增强 (`<features>`)
+### 3.3 硬件欺骗与 Hyper-V 增强 (`<features>`)
 NVIDIA 驱动如果发现自己在虚拟机中，可能会报错。
 
 `<kvm><hidden state='on'/></kvm>`：隐藏 KVM 的存在，防止驱动程序检测。
 
 `<vendor_id state='on' value='GenuineIntel'/>`：将 Hyper-V 的供应商 ID 改为 Intel 原厂标识，进一步欺骗驱动。
 
-3.4 磁盘与 VirtIO 驱动 (`<disk>`)
+### 3.4 磁盘与 VirtIO 驱动 (`<disk>`)
 为了获得接近原生的磁盘 IO 性能，必须使用 virtio 总线。
 
 `<driver cache='none' io='native'/>`：这是性能最高的磁盘访问模式，直接绕过宿主机缓存进行物理读写。
 
 virtio-win.iso (来源)：Windows 原生不带 VirtIO 驱动。你需要挂载这个 ISO，在安装 Windows 过程中手动加载驱动程序，否则安装程序找不到硬盘。
-
-3.5 显卡与 VBIOS 注入 (`<hostdev>`)
+![虚拟机内](cdrom.png)
+### 3.5 显卡与 VBIOS 注入 (`<hostdev>`)
 这是直通的最核心步骤。
 
 address domain="0x0000" bus="0x01" slot="0x00"... (来源)：
@@ -326,9 +357,9 @@ address domain="0x0000" bus="0x01" slot="0x00"... (来源)：
 
 为什么要 Patch？ 笔记本显卡的 VBIOS 通常被包含在系统 BIOS 中。直通时需要提供一份干净的、以 55 AA 字节开头的 ROM 文件。
 
-操作：从 TechPowerUp 下载后，使用十六进制编辑器删除文件开头多余的数据，直到第一行显示 55 AA。
+操作：从 [TechPowerUp](https://www.techpowerup.com/vgabios/) 下载后，使用十六进制编辑器删除文件开头多余的数据，直到第一行显示 55 AA。
 
-3.6 命名空间声明 (`<domain xmlns:qemu=...`)
+### 3.6 命名空间声明 (`<domain xmlns:qemu=...`)
 作用：为了在 XML 底部使用 `<qemu:commandline>` 注入自定义参数（如“假电池”补丁），必须在根标签声明这个命名空间。
 
 配置生效
