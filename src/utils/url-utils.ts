@@ -39,6 +39,11 @@ export function getDir(path: string): string {
 	return path.substring(0, lastSlashIndex + 1);
 }
 
+export function getPostImageBasePath(filePath?: string): string {
+	const relative = (filePath ?? "").replace(/^src\/content\/posts\//, "");
+	return `content/posts/${getDir(relative)}`.replace(/\/+/g, "/");
+}
+
 export function url(path: string) {
 	return joinUrl("", import.meta.env.BASE_URL, path);
 }
