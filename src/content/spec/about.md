@@ -1,7 +1,7 @@
 # About
-This is the demo site for [Fuwari](https://github.com/saicaca/fuwari).
+This is the blog site for [Siltal](https://github.com/siltal).
 
-::github{repo="saicaca/fuwari"}
+::github{repo="siltal/siltal"}
 
 > ### Sources of images used in this site
 > - [Unsplash](https://unsplash.com/)
